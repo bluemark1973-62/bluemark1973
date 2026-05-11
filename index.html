@@ -1,1 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日本東京自由行互動行程</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome 圖示 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .accordion-content {
+            transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+        .accordion-content.open {
+            max-height: 2000px; 
+            opacity: 1;
+        }
+        .rotate-icon {
+            transition: transform 0.3s ease;
+        }
+        .rotate-icon.open {
+            transform: rotate(180deg);
+        }
+        /* 隱藏捲軸但保留捲動功能 (提升美觀) */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased pb-20">
 
+    <header class="bg-indigo-600 text-white p-6 shadow-md sticky top-0 z-10">
+        <h1 class="text-2xl font-bold tracking-wider"><i class="fa-solid fa-plane-departure mr-2"></i>東京自由行行程</h1>
+        <p class="text-indigo-200 mt-1 text-sm">點擊日期展開詳細路線</p>
+    </header>
+
+    <main id="itinerary-container" class="max-w-3xl mx-auto p-4 mt-2 space-y-4">
+        <!-- 內容將由 JavaScript 動態生成 -->
+    </main>
+
+    <!-- 滿版地圖 Modal (改為上下捲動顯示多圖) -->
+    <div id="map-modal" class="fixed inset-0 bg-black bg-opacity-95 z-50 hidden overflow-y-auto hide-scrollbar transition-opacity">
+        
+        <!-- 固定於右上角的關閉按鈕 -->
+        <button id="close-modal" class="fixed top-4 right-4 z-[60] text-white text-2xl sm:text-3xl bg-black bg-opacity-60 rounded-full w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center hover:bg-gray-800 focus:outline-none shadow-lg border border-gray-600">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+
+        <!-- 可捲動的圖片內容區 -->
+        <div class="min-h-screen flex flex-col justify-start items-center p-4 sm:p-8 pt-16 sm:pt-20">
+            
+            <!-- 圖片容器 (JS 會將所有圖片塞進這裡) -->
+            <div id="modal-images-container" class="w-full max-w-5xl flex flex-col items-center space-y-6 sm:space-y-10">
+                <!-- JS 動態產生 img 標籤 -->
+            </div>
+
+            <p class="mt-8 mb-4 text-gray-400 text-sm bg-black bg-opacity-50 px-3 py-1 rounded">可上下捲動與雙指縮放查看</p>
+        </div>
+    </div>
+
+    <!-- 核心程式邏輯 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            renderItinerary();
+            setupModal();
+        });
+
+        function renderItinerary() {
+            const container = document.getElementById('itinerary-container');
+            container.innerHTML = '';
+
+            MY_ITINERARY_DATA.forEach((dayData, dayIndex) => {
+                const dayCard = document.createElement('div');
+                dayCard.className = 'bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden';
+
+                const headerBtn = document.createElement('button');
+                headerBtn.className = 'w-full text-left p-4 sm:p-5 flex justify-between items-center bg-white hover:bg-slate-50 focus:outline-none';
+                headerBtn.onclick = () => toggleAccordion(dayIndex);
+                headerBtn.innerHTML = `
+                    <div>
+                        <h2 class="text-lg font-bold text-indigo-700">${dayData.day}: ${dayData.date}</h2>
+                        <p class="text-sm text-slate-500 mt-1"><i class="fa-solid fa-mug-hot mr-1"></i>重點：${dayData.focus}</p>
+                    </div>
+                    <i id="icon-${dayIndex}" class="fa-solid fa-chevron-down text-slate-400 rotate-icon"></i>
+                `;
+
+                const contentDiv = document.createElement('div');
+                contentDiv.id = `content-${dayIndex}`;
+                contentDiv.className = 'accordion-content bg-slate-50 border-t border-slate-100';
+
+                const stepsContainer = document.createElement('div');
+                stepsContainer.className = 'p-4 sm:p-5 space-y-6 relative border-l-2 border-indigo-200 ml-6 sm:ml-8 my-4';
+
+                dayData.steps.forEach((step, stepIndex) => {
+                    const stepEl = document.createElement('div');
+                    stepEl.className = 'relative pl-6';
+                    
+                    const dot = document.createElement('div');
+                    dot.className = 'absolute -left-[33px] top-1 w-4 h-4 rounded-full bg-indigo-500 border-4 border-white shadow';
+                    
+                    stepEl.innerHTML = `
+                        ${dot.outerHTML}
+                        <h3 class="text-base font-bold text-slate-800 flex flex-wrap items-center gap-2">
+                            ${step.start} <i class="fa-solid fa-arrow-right text-slate-400 text-sm"></i> ${step.end}
+                        </h3>
+                        
+                        <div class="mt-3 grid grid-cols-1 gap-3">
+                            <!-- 地鐵路線 (點擊放大) -->
+                            ${step.subwayMapImage ? `
+                            <button onclick="openModal(${dayIndex}, ${stepIndex})" class="flex items-center text-left bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-100 transition border border-blue-200 w-fit">
+                                <i class="fa-solid fa-train-subway mr-2"></i>
+                                <span>${step.subwayLine}</span>
+                                <i class="fa-solid fa-images ml-2 opacity-60"></i>
+                            </button>
+                            ` : `
+                            <div class="flex items-center text-left text-slate-600 px-1 py-1 text-sm font-medium">
+                                <i class="fa-solid fa-train-subway mr-2"></i> ${step.subwayLine}
+                            </div>
+                            `}
+
+                            <div class="flex flex-wrap gap-2 sm:gap-4 text-sm text-slate-600">
+                                <div class="flex items-center bg-slate-100 px-2 py-1 rounded">
+                                    <i class="fa-regular fa-clock mr-1.5 text-slate-400"></i> ${step.duration}
+                                </div>
+                                <div class="flex items-center bg-slate-100 px-2 py-1 rounded">
+                                    <i class="fa-solid fa-coins mr-1.5 text-yellow-500"></i> ${step.cost}
+                                </div>
+                            </div>
+
+                            ${step.googleMapLink ? `
+                            <div>
+                                <a href="${step.googleMapLink}" target="_blank" class="inline-flex items-center text-emerald-600 text-sm hover:text-emerald-700 hover:underline font-medium">
+                                    <i class="fa-solid fa-map-location-dot mr-1.5"></i> Google Map 導航路線
+                                </a>
+                            </div>
+                            ` : ''}
+
+                            ${step.notes ? `
+                            <div class="bg-amber-50 border-l-4 border-amber-400 p-3 mt-1 rounded-r text-sm text-slate-700 shadow-sm">
+                                <p class="font-bold text-amber-700 mb-1 text-xs"><i class="fa-solid fa-circle-exclamation mr-1"></i> 注意事項</p>
+                                <p>${step.notes}</p>
+                            </div>
+                            ` : ''}
+                        </div>
+                    `;
+                    stepsContainer.appendChild(stepEl);
+                });
+
+                contentDiv.appendChild(stepsContainer);
+                dayCard.appendChild(headerBtn);
+                dayCard.appendChild(contentDiv);
+                container.appendChild(dayCard);
+            });
+        }
+
+        function toggleAccordion(index) {
+            const content = document.getElementById(`content-${index}`);
+            const icon = document.getElementById(`icon-${index}`);
+            
+            if (content.classList.contains('open')) {
+                content.classList.remove('open');
+                icon.classList.remove('open');
+            } else {
+                document.querySelectorAll('.accordion-content.open').forEach(el => el.classList.remove('open'));
+                document.querySelectorAll('.rotate-icon.open').forEach(el => el.classList.remove('open'));
+                
+                content.classList.add('open');
+                icon.classList.add('open');
+            }
+        }
+
+        // --- 多圖垂直排列 Modal 邏輯 ---
+        function setupModal() {
+            const modal = document.getElementById('map-modal');
+            const closeBtn = document.getElementById('close-modal');
+
+            closeBtn.onclick = closeModal;
+            
+            // 點擊背景關閉 (避免點到圖片時關閉)
+            modal.onclick = (e) => {
+                if (e.target === modal || e.target.classList.contains('min-h-screen')) {
+                    closeModal();
+                }
+            };
+        }
+
+        function closeModal() {
+            document.getElementById('map-modal').classList.add('hidden');
+            document.body.style.overflow = 'auto'; // 恢復背景滾動
+        }
+
+        function openModal(dayIndex, stepIndex) {
+            const step = MY_ITINERARY_DATA[dayIndex].steps[stepIndex];
+            let images = step.subwayMapImage;
+
+            if (!images) return;
+
+            // 確保都是陣列格式
+            const imageArray = Array.isArray(images) ? images : [images];
+            const container = document.getElementById('modal-images-container');
+            
+            // 清空舊圖片
+            container.innerHTML = '';
+
+            // 動態產生所有圖片並放入容器
+            imageArray.forEach((src) => {
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = "地圖路線";
+                img.className = "w-full h-auto object-contain rounded shadow-lg select-none bg-white bg-opacity-10";
+                
+                // 點擊圖片本身不觸發關閉 Modal 的事件
+                img.onclick = (e) => e.stopPropagation();
+                
+                container.appendChild(img);
+            });
+
+            // 顯示 Modal
+            const modal = document.getElementById('map-modal');
+            modal.classList.remove('hidden');
+            // 將 Modal 捲軸拉回最上方 (以防前次捲動過)
+            modal.scrollTop = 0; 
+            document.body.style.overflow = 'hidden'; // 防止底層畫面滾動
+        }
+
+// =====================================================================
+// ==================== 👇 行程資料與圖片設定區 👇 ====================
+// =====================================================================
+
+const GLOBAL_IMAGES = {
+    tokyoSubwayImg: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Tokyo_Subway_Route_Map_%28zh-Hant%29.svg/1200px-Tokyo_Subway_Route_Map_%28zh-Hant%29.svg.png",
+};
+
+const MY_ITINERARY_DATA = [
+    {
+        day: "Day 1",
+        date: "6/22 (一)",
+        focus: "咖啡館文化",
+        steps: [
+            {
+                start: "本所吾妻橋",
+                end: "押上",
+                subwayLine: "都營淺草線 (往押上方向)",
+                duration: "約 3 分鐘",
+                cost: "180日圓",
+                googleMapLink: "https://www.google.com/maps/dir/本所吾妻橋站/押上站/", 
+                notes: "第一站很近，注意不要搭過頭。抵達後可先去寄放行李。",
+                
+                // ⭐ 現在使用中括號放入多張圖，點開後會一頁由上往下顯示
+                subwayMapImage: [
+                    "https://zh.wikipedia.org/wiki/Special:FilePath/%E9%83%BD%E5%96%B6%E6%B5%85%E8%8D%89%E7%B7%9A_%E5%81%9C%E8%BB%8A%E9%A7%85%E6%A1%88%E5%86%85%E5%9B%B3.svg", 
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/%E6%9D%B1%E6%80%A5%E7%94%B0%E5%9C%92%E9%83%BD%E5%B8%82%E7%B7%9A_%E5%81%9C%E8%BB%8A%E9%A7%85%E6%A1%88%E5%86%85%E5%9B%B3.svg/1280px-%E6%9D%B1%E6%80%A5%E7%94%B0%E5%9C%92%E9%83%BD%E5%B8%82%E7%B7%9A_%E5%81%9C%E8%BB%8A%E9%A7%85%E6%A1%88%E5%86%85%E5%9B%B3.svg.png"
+                ]
+            },
+            {
+                start: "押上",
+                end: "三軒茶屋站",
+                subwayLine: "東京地鐵半藏門線 (直通運轉 東急田園都市線)",
+                duration: "約 45 分鐘",
+                cost: "260日圓",
+                googleMapLink: "https://www.google.com/maps/dir/押上站/三軒茶屋站/",
+                notes: "此班車會直接連接東急田園都市線，中途不需下車轉乘！抵達三軒茶屋後可逛逛當地的特色咖啡店。",
+                subwayMapImage: "https://zh.wikipedia.org/wiki/Special:FilePath/%E6%9D%B1%E6%80%A5%E7%94%B0%E5%9C%92%E9%83%BD%E5%B8%82%E7%B7%9A_%E5%81%9C%E8%BB%8A%E9%A7%85%E6%A1%88%E5%86%85%E5%9B%B3.svg"
+            },
+            {
+                start: "三軒茶屋站",
+                end: "豪德寺",
+                subwayLine: "東急世田谷線 (三軒茶屋 -> 宮之坂)",
+                duration: "約 15 分鐘",
+                cost: "160日圓",
+                googleMapLink: "https://www.google.com/maps/dir/三軒茶屋站/豪德寺/",
+                notes: "搭乘路面電車世田谷線。建議搭到「宮之坂站」下車，步行到豪德寺較近。豪德寺是招財貓發源地。",
+                subwayMapImage: "https://www5b.biglobe.ne.jp/Primera/hobby/rail/setagaya/rosen.gif"
+            },
+            {
+                start: "豪德寺",
+                end: "明治神宮",
+                subwayLine: "小田急線 (豪德寺 -> 代代木上原) 轉 千代田線",
+                duration: "約 25 分鐘",
+                cost: "330日圓",
+                googleMapLink: "https://www.google.com/maps/dir/豪德寺/明治神宮/",
+                notes: "在代代木上原站同月台轉乘千代田線，至「明治神宮前」站下車。附近還有原宿可以逛逛咖啡店。",
+                subwayMapImage: GLOBAL_IMAGES.tokyoSubwayImg
+            }
+        ]
+    },
+    {
+        day: "Day 2",
+        date: "6/23 (二)",
+        focus: "海濱風景與咖啡館文化",
+        steps: [
+            {
+                start: "本所吾妻橋",
+                end: "鎌倉站",
+                subwayLine: "都營淺草線 轉 JR橫須賀線",
+                duration: "約 1小時10分",
+                cost: "1,100日圓",
+                googleMapLink: "https://www.google.com/maps/dir/本所吾妻橋站/鎌倉站/",
+                notes: "車程較長，建議可以先買好早餐。抵達鎌倉後可以先去鶴岡八幡宮走走，或直接換江之電。",
+                subwayMapImage: GLOBAL_IMAGES.tokyoSubwayImg
+            },
+            {
+                start: "鎌倉站",
+                end: "鎌倉高校前",
+                subwayLine: "江之島電鐵 (江之電)",
+                duration: "約 18 分鐘",
+                cost: "260日圓",
+                googleMapLink: "https://www.google.com/maps/dir/鎌倉站/鎌倉高校前站/",
+                notes: "知名灌籃高手平交道打卡點。人潮可能很多，拍照請注意交通安全，不要站在馬路中央。",
+                subwayMapImage: "https://www.enoden.co.jp/wp/wp-content/themes/enoden/assets/images/train/route_map.png"
+            },
+            {
+                start: "鎌倉高校前",
+                end: "江之島",
+                subwayLine: "江之島電鐵 (江之電)",
+                duration: "約 6 分鐘",
+                cost: "200日圓",
+                googleMapLink: "https://www.google.com/maps/dir/鎌倉高校前站/江之島/",
+                notes: "下車後需步行過橋才能抵達江之島。島上有許多海景咖啡廳，可以安排在此休息吃午餐或下午茶。",
+                subwayMapImage: "https://www.enoden.co.jp/wp/wp-content/themes/enoden/assets/images/train/route_map.png"
+            },
+            {
+                start: "江之島",
+                end: "大船站",
+                subwayLine: "湘南單軌電車 (湘南江之島 -> 大船)",
+                duration: "約 14 分鐘",
+                cost: "320日圓",
+                googleMapLink: "https://www.google.com/maps/dir/湘南江之島站/大船站/",
+                notes: "體驗懸掛式的單軌電車，非常有特色，像在搭雲霄飛車。",
+                subwayMapImage: "https://www.shonan-monorail.co.jp/public/images/route/map.png"
+            },
+            {
+                start: "大船站",
+                end: "橫濱",
+                subwayLine: "JR東海道本線 或 橫須賀線",
+                duration: "約 15 分鐘",
+                cost: "310日圓",
+                googleMapLink: "https://www.google.com/maps/dir/大船站/橫濱站/",
+                notes: "晚上可至橫濱看夜景、紅磚倉庫周邊有很多很棒的文青咖啡廳。",
+                subwayMapImage: GLOBAL_IMAGES.tokyoSubwayImg
+            }
+        ]
+    }
+];
+// ==================== 👆 行程資料設定區結束 👆 ====================
+
+    </script>
+</body>
+</html>
